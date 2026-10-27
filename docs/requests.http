@@ -1,0 +1,66 @@
+### Requisições de exemplo — IntelliJ HTTP Client / VS Code (REST Client)
+### Servidor: mvn spring-boot:run  (http://localhost:8080)
+
+@base = http://localhost:8080/api/tarefas
+
+### 1. GET — listar todas as tarefas (200)
+GET {{base}}
+
+### 2. GET — filtrar por status (200)
+GET {{base}}?status=PENDENTE
+
+### 3. GET — status inválido (400)
+GET {{base}}?status=XPTO
+
+### 4. POST — criar tarefa (201 + Location)
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "Entregar atividade",
+  "descricao": "Unidade HTTP",
+  "status": "EM_ANDAMENTO",
+  "dataLimite": "2026-11-05"
+}
+
+### 5. POST — título em branco (400)
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": ""
+}
+
+### 6. GET — buscar por id (200)
+GET {{base}}/1
+
+### 7. GET — id inexistente (404)
+GET {{base}}/9999
+
+### 8. PUT — atualizar tarefa (200)
+PUT {{base}}/1
+Content-Type: application/json
+
+{
+  "titulo": "Entregar atividade",
+  "descricao": "Unidade HTTP — revisada",
+  "status": "CONCLUIDA",
+  "dataLimite": "2026-11-05"
+}
+
+### 9. PUT — tarefa inexistente (404)
+PUT {{base}}/9999
+Content-Type: application/json
+
+{
+  "titulo": "Qualquer"
+}
+
+### 10. DELETE — excluir tarefa (204)
+DELETE {{base}}/1
+
+### 11. DELETE — tarefa inexistente (404)
+DELETE {{base}}/9999
+
+### 12. DELETE — id não numérico (400)
+DELETE {{base}}/abc
