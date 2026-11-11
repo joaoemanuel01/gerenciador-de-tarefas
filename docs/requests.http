@@ -1,18 +1,25 @@
 ### Requisições de exemplo — IntelliJ HTTP Client / VS Code (REST Client)
 ### Servidor: mvn spring-boot:run  (http://localhost:8080)
+### Atenção: ajuste as datas se estiverem no passado (a API retorna 422).
 
 @base = http://localhost:8080/api/tarefas
 
-### 1. GET — listar todas as tarefas (200)
+### 1. GET — listar (200, paginado)
 GET {{base}}
 
-### 2. GET — filtrar por status (200)
-GET {{base}}?status=PENDENTE
+### 2. GET — filtro, busca, paginação e ordenação (200)
+GET {{base}}?status=PENDENTE&busca=spring&pagina=0&tamanho=5&ordenarPor=titulo&direcao=desc
 
 ### 3. GET — status inválido (400)
 GET {{base}}?status=XPTO
 
-### 4. POST — criar tarefa (201 + Location)
+### 4. GET — tamanho acima do limite (400)
+GET {{base}}?tamanho=1000
+
+### 5. GET — campo de ordenação não permitido (400)
+GET {{base}}?ordenarPor=senha
+
+### 6. POST — criar tarefa (201 + Location)
 POST {{base}}
 Content-Type: application/json
 
@@ -20,10 +27,10 @@ Content-Type: application/json
   "titulo": "Entregar atividade",
   "descricao": "Unidade HTTP",
   "status": "EM_ANDAMENTO",
-  "dataLimite": "2026-11-05"
+  "dataLimite": "2026-12-15"
 }
 
-### 5. POST — título em branco (400)
+### 7. POST — título em branco (400)
 POST {{base}}
 Content-Type: application/json
 
@@ -31,24 +38,67 @@ Content-Type: application/json
   "titulo": ""
 }
 
-### 6. GET — buscar por id (200)
+### 8. POST — HTML no título (400)
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "<script>alert(1)</script>"
+}
+
+### 9. POST — campo desconhecido (400)
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "Com id",
+  "id": 99
+}
+
+### 10. POST — data no passado (422)
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "Data antiga",
+  "dataLimite": "2000-01-01"
+}
+
+### 11. POST — título duplicado em aberto (409) — execute o item 6 antes
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "entregar atividade"
+}
+
+### 12. POST — Content-Type inválido (415)
+POST {{base}}
+Content-Type: text/plain
+
+titulo=X
+
+### 13. GET — buscar por id (200)
 GET {{base}}/1
 
-### 7. GET — id inexistente (404)
+### 14. GET — id inexistente (404)
 GET {{base}}/9999
 
-### 8. PUT — atualizar tarefa (200)
+### 15. GET — id inválido (400)
+GET {{base}}/0
+
+### 16. PUT — atualizar tarefa (200)
 PUT {{base}}/1
 Content-Type: application/json
 
 {
   "titulo": "Entregar atividade",
   "descricao": "Unidade HTTP — revisada",
-  "status": "CONCLUIDA",
-  "dataLimite": "2026-11-05"
+  "status": "EM_ANDAMENTO",
+  "dataLimite": "2026-12-15"
 }
 
-### 9. PUT — tarefa inexistente (404)
+### 17. PUT — tarefa inexistente (404)
 PUT {{base}}/9999
 Content-Type: application/json
 
@@ -56,11 +106,36 @@ Content-Type: application/json
   "titulo": "Qualquer"
 }
 
-### 10. DELETE — excluir tarefa (204)
+### 18. PUT na coleção — método não permitido (405)
+PUT {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "X"
+}
+
+### 19. PATCH — alterar somente o status (200)
+PATCH {{base}}/1/status
+Content-Type: application/json
+
+{
+  "status": "CONCLUIDA"
+}
+
+### 20. PATCH — status ausente (400)
+PATCH {{base}}/1/status
+Content-Type: application/json
+
+{}
+
+### 21. DELETE — excluir tarefa (204)
 DELETE {{base}}/1
 
-### 11. DELETE — tarefa inexistente (404)
+### 22. DELETE — tarefa inexistente (404)
 DELETE {{base}}/9999
 
-### 12. DELETE — id não numérico (400)
+### 23. DELETE — id não numérico (400)
 DELETE {{base}}/abc
+
+### 24. Rota inexistente (404)
+GET http://localhost:8080/api/nao-existe

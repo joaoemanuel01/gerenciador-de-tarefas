@@ -1,65 +1,83 @@
-# Gerenciador de Tarefas — API RESTful com Spring Boot
+# Gerenciador de Tarefas — API RESTful com Spring Boot (v2)
 
-API para gerenciamento de tarefas pessoais. Permite **criar, listar, atualizar e excluir** tarefas através dos métodos HTTP `POST`, `GET`, `PUT` e `DELETE`.
+API para gerenciamento de tarefas pessoais: **criar, listar, atualizar e excluir** tarefas com `GET`, `POST`, `PUT`, `PATCH` e `DELETE`.
+
+Esta versão acrescenta, em relação à primeira entrega: arquitetura em camadas formalizada (MVC + Service + Mapper + DTO), validações adicionais, regras de negócio, paginação/filtro/ordenação, atualização parcial (`PATCH`) e tratamento padronizado de todos os erros.
 
 ## Tecnologias
 
-| Item | Versão / uso |
+| Item | Uso |
 |---|---|
-| Java | 21 |
-| Spring Boot | 3.4.5 |
+| Java 21 / Spring Boot 3.4.5 | base do projeto |
 | spring-boot-starter-web | API REST (Spring MVC, Jackson, Tomcat embarcado) |
-| spring-boot-starter-data-jpa | Persistência com Hibernate |
-| spring-boot-starter-validation | Validação do corpo das requisições |
-| H2 | Banco em memória (dados são perdidos ao reiniciar) |
+| spring-boot-starter-data-jpa | persistência (Hibernate, Spring Data, Specifications) |
+| spring-boot-starter-validation | Bean Validation nos DTOs e parâmetros |
+| H2 | banco em memória (dados perdidos ao reiniciar) |
 | springdoc-openapi | Swagger UI gerado a partir do código |
-| JUnit 5 + MockMvc | Testes automatizados |
+| JUnit 5, Mockito, MockMvc | testes |
 
 ## Como executar
 
 Pré-requisitos: JDK 21 e Maven 3.9+.
 
 ```bash
-mvn spring-boot:run
+mvn test              # roda os 59 testes
+mvn spring-boot:run   # sobe a API em http://localhost:8080
 ```
 
-A API sobe em `http://localhost:8080`.
-
-- Swagger UI (documentação interativa): http://localhost:8080/swagger-ui.html
+- Swagger UI: http://localhost:8080/swagger-ui.html
 - OpenAPI JSON: http://localhost:8080/v3/api-docs
-- Console do banco H2: http://localhost:8080/h2-console (JDBC URL: `jdbc:h2:mem:tarefasdb`, usuário `sa`, senha vazia)
+- Console H2 (desligado por padrão por segurança): para usar, mude `spring.h2.console.enabled=true` em `application.properties` e acesse `/h2-console` (JDBC URL `jdbc:h2:mem:tarefasdb`, usuário `sa`, senha vazia).
 
-Para rodar os testes automatizados:
+## Modelos arquiteturais aplicados
 
-```bash
-mvn test
-```
-
-## Estrutura do projeto
+> Os padrões abaixo são os modelos arquiteturais clássicos de uma API Spring (MVC e arquitetura em camadas, com Repository, DTO, Mapper e tratamento centralizado de exceções).
 
 ```
-src/main/java/br/com/tarefas
-├── TarefasApplication.java        # classe principal
-├── controller/TarefaController    # camada HTTP (endpoints)
-├── service/TarefaService          # regras de negócio
-├── repository/TarefaRepository    # acesso a dados (Spring Data JPA)
-├── model/Tarefa, StatusTarefa     # entidade e enum
-├── dto/TarefaRequest, TarefaResponse
-└── exception/                     # exceções e tratamento global de erros
+ Cliente HTTP (Insomnia / Postman / front-end)
+        │  JSON
+        ▼
+┌────────────────────────────────────────────────────────────┐
+│ controller/   TarefaController          (C do MVC)         │  traduz HTTP ⇄ chamadas de serviço
+│ exception/    GlobalExceptionHandler    (@RestControllerAdvice) │  erros → JSON padronizado
+├────────────────────────────────────────────────────────────┤
+│ dto/          TarefaRequest, StatusRequest,                │  contrato da API (View do MVC = JSON)
+│               TarefaResponse, PaginaResponse               │
+│ mapper/       TarefaMapper                                 │  DTO ⇄ entidade
+├────────────────────────────────────────────────────────────┤
+│ service/      TarefaService (interface)                    │  regras de negócio
+│               TarefaServiceImpl                            │
+├────────────────────────────────────────────────────────────┤
+│ repository/   TarefaRepository (Spring Data JPA)           │  acesso a dados (padrão Repository)
+│ model/        Tarefa, StatusTarefa                         │  Model do MVC (entidade JPA)
+└────────────────────────────────────────────────────────────┘
+        ▼
+       H2 (em memória)
 ```
 
-A separação em camadas (controller → service → repository) mantém cada classe com uma responsabilidade única. Os DTOs (`TarefaRequest` / `TarefaResponse`) evitam expor a entidade JPA diretamente.
+| Modelo / padrão | Como foi aplicado |
+|---|---|
+| **MVC** | Model = `Tarefa`; Controller = `TarefaController`; View = representação JSON (`TarefaResponse`) |
+| **Arquitetura em camadas** | apresentação → serviço → repositório; cada camada só conhece a imediatamente abaixo |
+| **Service Layer + inversão de dependência** | o controller depende da interface `TarefaService`, não da implementação |
+| **Repository** | `TarefaRepository` esconde o acesso ao banco (Spring Data JPA + Specifications para filtros) |
+| **DTO** | `TarefaRequest`/`TarefaResponse` separam o contrato da API da entidade JPA (a entidade nunca é exposta) |
+| **Mapper** | `TarefaMapper` concentra a conversão e a normalização (trim de textos) |
+| **Injeção de dependência** | todas as dependências por construtor (sem `@Autowired` em campo) |
+| **Tratamento centralizado de exceções** | `GlobalExceptionHandler` + exceções de domínio (`TarefaNaoEncontrada`, `Conflito`, `RegraNegocio`, `ParametroInvalido`) |
 
 ## Modelo de dados
 
-### Corpo aceito em POST e PUT (`TarefaRequest`)
+### Corpo de POST e PUT (`TarefaRequest`)
 
-| Campo | Tipo | Obrigatório | Regras |
+| Campo | Tipo | Obrigatório | Validações |
 |---|---|---|---|
-| `titulo` | string | **sim** | não pode ser vazio/em branco; máx. 120 caracteres |
-| `descricao` | string | não | máx. 500 caracteres |
-| `status` | string | não | `PENDENTE`, `EM_ANDAMENTO` ou `CONCLUIDA` (padrão: `PENDENTE`) |
-| `dataLimite` | string (data) | não | formato `yyyy-MM-dd` |
+| `titulo` | string | **sim** | não vazio/em branco; máx. 120; sem `<` ou `>` |
+| `descricao` | string | não | máx. 500; sem `<` ou `>` (em branco vira `null`) |
+| `status` | string | não | `PENDENTE` (padrão), `EM_ANDAMENTO` ou `CONCLUIDA` |
+| `dataLimite` | data | não | formato `yyyy-MM-dd`; não pode estar no passado |
+
+Campos desconhecidos no JSON (ex.: `"id": 99`) são **rejeitados com 400**, evitando o envio de dados que a API não prevê.
 
 ### Resposta (`TarefaResponse`)
 
@@ -69,143 +87,168 @@ A separação em camadas (controller → service → repository) mantém cada cl
   "titulo": "Entregar atividade",
   "descricao": "Unidade HTTP",
   "status": "EM_ANDAMENTO",
-  "dataLimite": "2026-11-05",
-  "criadaEm": "2026-10-27T11:30:00.123",
-  "atualizadaEm": "2026-10-27T11:30:00.123"
+  "dataLimite": "2026-12-15",
+  "criadaEm": "2026-11-11T19:30:00.123",
+  "atualizadaEm": "2026-11-11T19:30:00.123"
 }
 ```
 
 ## Endpoints
 
-Base URL: `http://localhost:8080/api/tarefas`
+Base: `http://localhost:8080/api/tarefas` (substantivo no plural, sem verbos na URL; o método HTTP indica a ação).
 
-| Método | Rota | Descrição | Sucesso | Falhas |
+| Método | Rota | Descrição | Sucesso | Falhas possíveis |
 |---|---|---|---|---|
-| `GET` | `/api/tarefas` | Lista todas as tarefas | `200 OK` | `400` (status inválido no filtro) |
-| `GET` | `/api/tarefas/{id}` | Busca uma tarefa pelo id | `200 OK` | `404` |
-| `POST` | `/api/tarefas` | Cria uma tarefa | `201 Created` (+ header `Location`) | `400` |
-| `PUT` | `/api/tarefas/{id}` | Atualiza uma tarefa existente | `200 OK` | `400`, `404` |
-| `DELETE` | `/api/tarefas/{id}` | Exclui uma tarefa | `204 No Content` (sem corpo) | `404`, `400` (id não numérico) |
+| `GET` | `/api/tarefas` | Lista paginada, com filtro e ordenação | `200` | `400` |
+| `GET` | `/api/tarefas/{id}` | Busca por id | `200` | `400`, `404` |
+| `POST` | `/api/tarefas` | Cria tarefa | `201` + `Location` | `400`, `409`, `415`, `422` |
+| `PUT` | `/api/tarefas/{id}` | Substitui todos os campos | `200` | `400`, `404`, `409`, `415`, `422` |
+| `PATCH` | `/api/tarefas/{id}/status` | Altera só o status | `200` | `400`, `404`, `409`, `415` |
+| `DELETE` | `/api/tarefas/{id}` | Exclui | `204` (sem corpo) | `400`, `404` |
 
 ### GET `/api/tarefas`
 
-Parâmetro opcional de query: `status` (`PENDENTE`, `EM_ANDAMENTO`, `CONCLUIDA`).
+Parâmetros de consulta (todos opcionais):
+
+| Parâmetro | Padrão | Regra |
+|---|---|---|
+| `status` | — | `PENDENTE`, `EM_ANDAMENTO` ou `CONCLUIDA` |
+| `busca` | — | trecho do título (sem diferenciar maiúsculas; máx. 100 caracteres) |
+| `pagina` | `0` | ≥ 0 |
+| `tamanho` | `10` | entre 1 e 50 |
+| `ordenarPor` | `id` | `id`, `titulo`, `status`, `dataLimite` ou `criadaEm` |
+| `direcao` | `asc` | `asc` ou `desc` |
 
 ```bash
-curl http://localhost:8080/api/tarefas
-curl "http://localhost:8080/api/tarefas?status=CONCLUIDA"
+curl "http://localhost:8080/api/tarefas?status=PENDENTE&busca=spring&tamanho=5&ordenarPor=titulo&direcao=desc"
 ```
 
-Resposta `200` — lista (vazia se não houver tarefas):
+Resposta `200`:
 
 ```json
-[
-  { "id": 1, "titulo": "Estudar Spring", "descricao": null, "status": "PENDENTE",
-    "dataLimite": null, "criadaEm": "...", "atualizadaEm": "..." }
-]
+{
+  "conteudo": [ { "id": 1, "titulo": "Estudar Spring", "status": "PENDENTE", "...": "..." } ],
+  "pagina": 0,
+  "tamanho": 5,
+  "totalElementos": 1,
+  "totalPaginas": 1,
+  "ultima": true
+}
 ```
+
+> Mudança em relação à v1: a lista agora vem dentro do envelope paginado (`conteudo`), com metadados para o cliente navegar pelas páginas.
 
 ### GET `/api/tarefas/{id}`
 
-```bash
-curl http://localhost:8080/api/tarefas/1
-```
-
-- `200` — tarefa encontrada
-- `404` — tarefa inexistente
+`200` tarefa encontrada · `400` id não positivo/não numérico · `404` inexistente.
 
 ### POST `/api/tarefas`
 
 ```bash
 curl -X POST http://localhost:8080/api/tarefas \
   -H "Content-Type: application/json" \
-  -d '{"titulo":"Entregar atividade","descricao":"Unidade HTTP","status":"EM_ANDAMENTO","dataLimite":"2026-11-05"}'
+  -d '{"titulo":"Entregar atividade","descricao":"Unidade HTTP","status":"EM_ANDAMENTO","dataLimite":"2026-12-15"}'
 ```
 
-- `201` — criada; o header `Location` aponta para `/api/tarefas/{id}`
-- `400` — título ausente/em branco, tamanho excedido, JSON mal formado, status ou data inválidos
+- `201` criada; header `Location: /api/tarefas/{id}`
+- `400` título ausente/em branco, tamanho excedido, `<`/`>` nos textos, JSON mal formado, campo desconhecido, status ou data inválidos
+- `409` já existe tarefa **em aberto** (não concluída) com o mesmo título (ignora maiúsculas e espaços nas pontas)
+- `415` `Content-Type` diferente de `application/json`
+- `422` data limite no passado
 
 ### PUT `/api/tarefas/{id}`
 
-Substitui os dados da tarefa pelos enviados no corpo (mesmas regras do POST).
+Substitui todos os campos (status omitido volta para `PENDENTE`). Mesmas validações do POST; a data só é revalidada se for alterada, e o título pode ser mantido sem gerar conflito consigo mesma.
+
+`200` · `400` · `404` · `409` · `415` · `422`.
+
+### PATCH `/api/tarefas/{id}/status`
+
+Atualização parcial, boa prática quando só um campo muda:
 
 ```bash
-curl -X PUT http://localhost:8080/api/tarefas/1 \
-  -H "Content-Type: application/json" \
-  -d '{"titulo":"Entregar atividade","status":"CONCLUIDA"}'
+curl -X PATCH http://localhost:8080/api/tarefas/1/status \
+  -H "Content-Type: application/json" -d '{"status":"CONCLUIDA"}'
 ```
 
-- `200` — atualizada (retorna a tarefa)
-- `400` — dados inválidos
-- `404` — tarefa inexistente
+`200` · `400` status ausente/inválido · `404` · `409` reabrir a tarefa conflitaria com outra em aberto de mesmo título.
 
 ### DELETE `/api/tarefas/{id}`
 
-```bash
-curl -X DELETE http://localhost:8080/api/tarefas/1 -i
-```
+`204` excluída · `400` id inválido (ex.: `/api/tarefas/abc`) · `404` inexistente.
 
-- `204` — excluída (sem corpo)
-- `404` — tarefa inexistente
-- `400` — id não numérico (ex.: `/api/tarefas/abc`)
+## Formato único de erros
 
-## Formato dos erros
-
-Toda falha retorna o mesmo JSON, produzido pelo `GlobalExceptionHandler`:
+Toda falha — de validação, de negócio, de protocolo HTTP ou inesperada — retorna o mesmo JSON:
 
 ```json
 {
   "status": 400,
   "erro": "Bad Request",
   "mensagem": "Dados inválidos",
+  "caminho": "/api/tarefas",
   "detalhes": ["titulo: O título é obrigatório"],
-  "timestamp": "2026-10-27T11:30:00.123"
+  "timestamp": "2026-11-11T19:30:00.123"
 }
 ```
 
-```json
-{
-  "status": 404,
-  "erro": "Not Found",
-  "mensagem": "Tarefa com id 9999 não encontrada",
-  "detalhes": [],
-  "timestamp": "2026-10-27T11:30:00.123"
-}
-```
+| Código | Quando acontece |
+|---|---|
+| `400` | validação de corpo/parâmetros, JSON inválido, campo desconhecido, id inválido, ordenação inválida |
+| `404` | tarefa ou endpoint inexistente |
+| `405` | método HTTP não permitido na rota (ex.: `PUT /api/tarefas`) |
+| `409` | conflito com o estado atual (título duplicado em aberto) |
+| `415` | corpo que não é `application/json` |
+| `422` | dados bem formados, mas que violam regra de negócio (data no passado) |
+| `500` | erro inesperado: registrado no log do servidor; o cliente recebe apenas uma mensagem genérica, **sem stack trace nem detalhes internos** |
 
-## Testando a API
+## Validações e segurança
 
-Três opções:
+- **Bean Validation** nos DTOs (`@NotBlank`, `@Size`, `@Pattern`, `@NotNull`) e nos parâmetros (`@Positive`, `@Min`, `@Max`).
+- **Entrada saneada:** `<` e `>` rejeitados em textos (barreira contra injeção de HTML/script); espaços nas pontas removidos.
+- **Sem mass assignment:** o JSON só pode conter os campos previstos; `id`, `criadaEm` etc. nunca vêm do cliente.
+- **Lista branca de ordenação:** o cliente não escolhe campos arbitrários da entidade.
+- **Limites de paginação:** `tamanho` máx. 50, impedindo consultas gigantes.
+- **Busca segura:** `%` e `_` digitados são tratados como texto literal; consultas via JPA (sem concatenar SQL).
+- **Exposição mínima:** entidade JPA nunca é retornada; erros 500 sem detalhes internos; console H2 desligado por padrão.
 
-1. **Swagger UI** — http://localhost:8080/swagger-ui.html permite executar cada endpoint pelo navegador.
-2. **Insomnia / Postman** — importe o arquivo `docs/requests.http` (ou crie as requisições conforme a tabela de endpoints). Dica: no Insomnia/Postman, use `Content-Type: application/json` nas requisições `POST` e `PUT`.
-3. **Testes automatizados** — `mvn test` executa `TarefaControllerTest` (18 testes com MockMvc).
+## Testes
 
-### Roteiro de teste manual sugerido
+`mvn test` executa **59 testes**:
 
-| # | Requisição | Resultado esperado |
+| Classe | Testes | O que cobre |
 |---|---|---|
-| 1 | `GET /api/tarefas` | `200`, `[]` |
-| 2 | `POST /api/tarefas` com título válido | `201` + `Location` |
-| 3 | `POST /api/tarefas` com `{"titulo":""}` | `400` com `detalhes` |
-| 4 | `GET /api/tarefas` | `200`, lista com 1 item |
-| 5 | `PUT /api/tarefas/1` com `status: CONCLUIDA` | `200` |
-| 6 | `PUT /api/tarefas/9999` | `404` |
-| 7 | `DELETE /api/tarefas/1` | `204` |
-| 8 | `GET /api/tarefas/1` | `404` |
+| `TarefaControllerTest` | 46 | integração HTTP (MockMvc + H2): sucesso e falha de cada endpoint, paginação, filtro, ordenação, validações, 400/404/405/409/415/422 |
+| `TarefaServiceImplTest` | 10 | regras de negócio isoladas, com repositório simulado (Mockito) |
+| `TarefaMapperTest` | 3 | conversões e normalização |
+
+Para testar manualmente: **Swagger UI**, ou importe `docs/requests.http` (IntelliJ/VS Code) e replique no Insomnia/Postman.
+
+### Roteiro manual sugerido
+
+| # | Requisição | Esperado |
+|---|---|---|
+| 1 | `GET /api/tarefas` | `200`, `conteudo: []` |
+| 2 | `POST` com título válido | `201` + `Location` |
+| 3 | `POST` com o mesmo título | `409` |
+| 4 | `POST` com `{"titulo":""}` | `400` com `detalhes` |
+| 5 | `POST` com `"dataLimite":"2000-01-01"` | `422` |
+| 6 | `PATCH /1/status` `{"status":"CONCLUIDA"}` | `200` |
+| 7 | `PUT /9999` | `404` |
+| 8 | `GET ?tamanho=1000` | `400` |
+| 9 | `DELETE /1` | `204` |
+| 10 | `GET /1` | `404` |
 
 ## Aspectos da unidade contemplados
 
-| Aspecto | Onde está no código |
+| Aspecto do enunciado | Onde está |
 |---|---|
-| Projeto Spring Boot com dependências para API RESTful | `pom.xml` (web, data-jpa, validation, h2, springdoc) |
-| `GET` — listar tarefas | `TarefaController#listar` e `#buscar` |
-| `POST` — criar tarefa | `TarefaController#criar` (retorna `201` + `Location`) |
-| `PUT` — atualizar tarefa | `TarefaController#atualizar` |
-| `DELETE` — excluir tarefa | `TarefaController#excluir` (retorna `204`) |
-| Códigos de status HTTP adequados | 200, 201, 204, 400, 404 conforme cada caso |
-| Tratamento de sucesso e falha | `GlobalExceptionHandler` + validação com `@Valid` |
-| Uso correto de `@RestController`, `@RequestMapping`, `@PathVariable`, `@RequestBody`, `@RequestParam` | `TarefaController` |
-| Separação de responsabilidades | camadas controller / service / repository / dto |
-| Testes da API | `TarefaControllerTest` (sucesso e falha de cada método) |
-| Documentação | este README + Swagger UI + `docs/requests.http` |
+| 1. Revisão dos métodos HTTP e boas práticas | `TarefaController`: verbos corretos, `201`+`Location` no POST, `204` no DELETE, `consumes`/`produces` JSON, `PATCH` para atualização parcial |
+| 1. Validações adicionais (integridade e segurança) | `TarefaRequest` (Bean Validation, `@Pattern` anti-HTML), `@Positive/@Min/@Max` nos parâmetros, regras em `TarefaServiceImpl` (data no passado, título duplicado), lista branca de ordenação, `fail-on-unknown-properties` |
+| 2. Controladores RESTful com CRUD | `TarefaController` (`@RestController`, `@GetMapping`, `@PostMapping`, `@PutMapping`, `@PatchMapping`, `@DeleteMapping`, `@RequestBody`, `@PathVariable`, `@RequestParam`) |
+| 3. Mapeamento de endpoints e convenções | recurso no plural `/api/tarefas`, `/{id}` para itens, sub-recurso `/{id}/status`; sem verbos nas URLs |
+| 4. Requisições inválidas e erros do servidor | `GlobalExceptionHandler`: 400, 404, 405, 409, 415, 422 e 500 (com log e mensagem segura) |
+| 4. Respostas úteis ao cliente | `ErroResponse` (status, mensagem, caminho, detalhes por campo, timestamp), `PaginaResponse` (metadados de paginação), header `Location` |
+| 5. Testes abrangentes | 59 testes (integração, unidade de serviço e mapper) |
+| 5. Documentação atualizada | este README, Swagger UI (`@Operation`/`@ApiResponse` em cada endpoint), `docs/requests.http` |
+| Modelos arquiteturais discutidos | seção "Modelos arquiteturais aplicados" (MVC, camadas, Service/interface, Repository, DTO, Mapper, exceções centralizadas) |
